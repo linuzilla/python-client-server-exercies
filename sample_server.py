@@ -72,7 +72,7 @@ class ResponseStatus:
     def __init__(self, status: str):
         self.status = status
 
-    def to_json(self):
+    def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__,
                           sort_keys=True, indent=4)
 
@@ -135,7 +135,7 @@ def notify():
     ip_string = str(ip)
     ipv6 = True
 
-    if str(ip.ipv4_mapped) is not None:
+    if ip.ipv4_mapped is not None:
         ip_string = str(ip.ipv4_mapped)
         ipv6 = False
 
@@ -155,4 +155,7 @@ if __name__ == '__main__':
 
     # Shut down the scheduler when exiting the app
     atexit.register(lambda: scheduler.shutdown())
+
+    # on Linux, '::' will listen on both IPv4 and IPv6 interfaces
+    # on Windows, '::' will listen only on IPv6, change to '0.0.0.0' if you want it listen on IPv4 interface
     app.run(host='::', debug=True, port=5000, use_reloader=False)

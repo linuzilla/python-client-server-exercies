@@ -1,7 +1,7 @@
-# python-client-server-exercies
+# python client/server bi-directional communication 
 Just for fun!
 
-## Get Started
+## Getting Started
 
 ```sh
 $ virtualenv -p python3 venv

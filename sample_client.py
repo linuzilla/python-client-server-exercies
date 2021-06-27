@@ -1,3 +1,4 @@
+import atexit
 import ipaddress
 import json
 import random
@@ -5,6 +6,7 @@ import string
 import threading
 from datetime import datetime
 
+import flask
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, request
@@ -18,14 +20,14 @@ class ClientResponseStatus:
         self.status = status
         self.message = message
 
-    def to_json(self):
+    def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__,
                           sort_keys=True, indent=4)
 
 
 class ControlServer:
-    BASE_URL = 'http://192.168.1.101:5000'
-    WHILE_LIST = ['127.0.0.1', '192.168.1.101']
+    BASE_URL = 'http://[::1]:5000'
+    WHILE_LIST = ['127.0.0.1', '::1', '192.168.1.101']
     SERVER_AWAY_TIMEOUT = 40
 
     last_access: datetime
@@ -39,11 +41,11 @@ class ControlServer:
         self.last_access = datetime(1999, 1, 1)
         self.server_not_response_extra_time = 0
 
-    def check_server(self, f):
+    def check_server(self, f) -> str:
         ip = ipaddress.ip_address(request.remote_addr)
         ip_string = str(ip)
 
-        if str(ip.ipv4_mapped) is not None:
+        if ip.ipv4_mapped is not None:
             ip_string = str(ip.ipv4_mapped)
 
         if ip_string in self.WHILE_LIST:
@@ -54,21 +56,21 @@ class ControlServer:
             print("%s: server ip not allowed" % ip_string)
             return ClientResponseStatus("failed", "IP not allowed")
 
-    def retrieve_user(self):
+    def retrieve_user(self) -> str:
         print("call retrieve_user (%s)" % self.access_token)
         return jsonify({"user": "nobody"})
 
-    def retrieve_process(self):
+    def retrieve_process(self) -> str:
         return jsonify({"process": "empty"})
 
-    def retrieve_vm(self):
+    def retrieve_vm(self) -> str:
         return jsonify({"vm": "no vm"})
 
     def notify(self):
         duration = (datetime.now() - self.last_access).total_seconds()
 
         if duration > self.SERVER_AWAY_TIMEOUT + self.server_not_response_extra_time:
-            print("time diff: %s (try to notify server)" % duration)
+            print("duration: %s (try to notify server)" % duration)
             with self.lock:
                 try:
                     data = {'accessToken': self.access_token}
@@ -80,7 +82,7 @@ class ControlServer:
                     print("cannot connect to server")
                     self.server_not_response_extra_time += self.SERVER_AWAY_TIMEOUT
         else:
-            print("time diff: %s (no need to notify server)" % duration)
+            print("duration: %s (no need to notify server)" % duration)
 
 
 app = Flask(__name__)
@@ -92,24 +94,30 @@ def in_orphan_state_checker():
 
 
 @app.route('/user', methods=['GET'])
-def retrieve_user():
+def retrieve_user() -> str:
     return controlServer.check_server(lambda: controlServer.retrieve_user())
 
 
 @app.route('/process', methods=['GET'])
-def retrieve_process():
+def retrieve_process() -> str:
     return controlServer.check_server(lambda: controlServer.retrieve_process())
 
 
 @app.route('/vm', methods=['GET'])
-def retrieve_vm():
+def retrieve_vm() -> str:
     return controlServer.check_server(lambda: controlServer.retrieve_vm())
 
 
 if __name__ == '__main__':
+    print("Flask version: %s" % flask.__version__)
+
     scheduler = BackgroundScheduler()
-    # scheduler.init_app(app)
     scheduler.add_job(func=in_orphan_state_checker, trigger='interval', seconds=7, id='orphan_checker')
     scheduler.start()
 
+    # Shut down the scheduler when exiting the app
+    atexit.register(lambda: scheduler.shutdown())
+
+    # on Linux, '::' will listen on both IPv4 and IPv6 interfaces
+    # on Windows, '::' will listen only on IPv6, change to '0.0.0.0' if you want it listen on IPv4 interface.
     app.run(host='::', debug=True, port=4000, use_reloader=False)
